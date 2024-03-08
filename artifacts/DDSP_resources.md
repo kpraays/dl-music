@@ -4,6 +4,7 @@
 
 - A very good **DDSP tutorial**: [Introduction to DDSP for Audio Synthesis](https://intro2ddsp.github.io/intro.html)
 - The **original DDSP paper** (Engel et al. 2020): [ICLR paper link](https://openreview.net/forum?id=B1x1ma4tDr)
+  Link related to the paper's work (including GitHub code, Colab demo, Colab tut...): https://magenta.tensorflow.org/ddsp
 - A **detailed review** of DDSP in music and speech synthesis (Hayes et al. 2024): [arXiv link](https://arxiv.org/abs/2308.15422), [frontiers link](https://www.frontiersin.org/articles/10.3389/frsip.2023.1284100/full)
 - A paper about **drum synthesis** using high-level timbre descriptors (brightness, depth, warmth) for control the synthesis (Lavault et al. 2022): [paper link](https://www.dafx.de/paper-archive/2022/papers/DAFx20in22_paper_20.pdf)
 - A paper about **find the synthesizer parameters** from an input audio signal (Masuda & Saito 2021): [paper link](https://archives.ismir.net/ismir2021/paper/000053.pdf)
