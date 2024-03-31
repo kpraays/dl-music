@@ -73,7 +73,7 @@ class DDSP(nn.Module):
         self.register_buffer("cache_gru", torch.zeros(1, 1, hidden_size))
         self.register_buffer("phase", torch.zeros(1))
 
-    def forward(self, pitch, loudness, mfcc):
+    def forward(self, pitch, loudness, mfcc, timbre, source):
         latent_z = self.encoder(mfcc)
         hidden = torch.cat([
             self.in_mlps[0](pitch),

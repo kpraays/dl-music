@@ -69,18 +69,20 @@ step = 0
 epochs = int(np.ceil(args.STEPS / len(dataloader)))
 
 for e in tqdm(range(epochs)):
-    for s, p, l, mfcc in dataloader:
-        s = s.to(device)
-        p = p.unsqueeze(-1).to(device)
-        l = l.unsqueeze(-1).to(device)
+    for signal, pitch, loudness, mfcc, timbre, source in dataloader:
+        signal = signal.to(device)
+        pitch = pitch.unsqueeze(-1).to(device)
+        loudness = loudness.unsqueeze(-1).to(device)
         mfcc = mfcc.to(device)
+        timbre = timbre.to(device)
+        source = source.to(device)
 
-        l = (l - mean_loudness) / std_loudness
+        loudness = (loudness - mean_loudness) / std_loudness
 
-        y = model(p, l, mfcc).squeeze(-1)
+        y = model(pitch, loudness, mfcc, timbre, source).squeeze(-1)
 
         ori_stft = multiscale_fft(
-            s,
+            signal,
             config["train"]["scales"],
             config["train"]["overlap"],
         )
@@ -122,7 +124,7 @@ for e in tqdm(range(epochs)):
         mean_loss = 0
         n_element = 0
 
-        audio = torch.cat([s, y], -1).reshape(-1).detach().cpu().numpy()
+        audio = torch.cat([signal, y], -1).reshape(-1).detach().cpu().numpy()
 
         sf.write(
             path.join(args.ROOT, args.NAME, f"eval_{e:06d}.wav"),
