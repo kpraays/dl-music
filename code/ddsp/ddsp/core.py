@@ -16,7 +16,7 @@ def mean_std_loudness(dataset):
     mean = 0
     std = 0
     n = 0
-    for _, _, l, _ in dataset:
+    for _, _, l, _, _, _ in dataset:
         n += 1
         mean += (l.mean().item() - mean) / n
         std += (l.std().item() - std) / n

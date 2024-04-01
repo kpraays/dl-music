@@ -108,8 +108,7 @@ def main():
     loudness = np.concatenate(loudness, 0).astype(np.float32)
     mfccs = np.concatenate(mfccs, 0).astype(np.float32)
     timbres = np.concatenate(timbres, 0).astype(np.float32)
-    sources = np.expand_dims(np.array(sources), axis=0)
-    sources = np.concatenate(sources, 0).astype(np.float32)
+    sources = np.expand_dims(np.array(sources), axis=-1).astype(np.float32)
 
     out_dir = config["preprocess"]["out_dir"]
     makedirs(out_dir, exist_ok=True)
