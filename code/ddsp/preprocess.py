@@ -1,7 +1,7 @@
 import yaml
 import pathlib
 import librosa as li
-from ddsp.get_audio_descriptors import spectral_centroid, spectral_flatness, temporal_centroid
+from ddsp.get_audio_descriptors import get_all_descriptors, spectral_centroid, spectral_flatness, temporal_centroid
 from ddsp.core import extract_loudness, extract_pitch
 from effortless_config import Config
 import numpy as np
@@ -28,10 +28,7 @@ def preprocess(f, sampling_rate, block_size, signal_length, oneshot, **kwargs):
     loudness = extract_loudness(x, sampling_rate, block_size)
     mfcc = li.feature.mfcc(y=x[:-1], sr=sampling_rate, n_mfcc=30, n_fft=1024, hop_length=256, n_mels=128, fmin=20, fmax=8000)
     mfcc = np.transpose(mfcc, (1, 0))
-    spec_centroid = spectral_centroid(x, sampling_rate, 256, 128)
-    spec_flatness = spectral_flatness(x, 256, 128)
-    tempo_centroid = temporal_centroid(x, sampling_rate, 128, 64)
-    timbre_descriptors = np.array([spec_centroid, spec_flatness, tempo_centroid])
+    timbre_descriptors = get_all_descriptors(x, sampling_rate, 256, 128)
 
     x = x.reshape(-1, signal_length)
     pitch = pitch.reshape(x.shape[0], -1)

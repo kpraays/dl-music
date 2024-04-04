@@ -21,15 +21,31 @@ def spectral_centroid(signals, sample_rate, window_size, hop_size):
     time_variant_sc = librosa.feature.spectral_centroid(
         y=signals, sr=sample_rate, n_fft=window_size, hop_length=hop_size,
         window='hann', center=True)
-    return np.median(time_variant_sc, axis=-1) if signals.ndim > 1 \
-        else np.median(time_variant_sc)
+    time_variant_sc[time_variant_sc < 5] = np.nan
+    return np.nanmedian(time_variant_sc, axis=-1) if signals.ndim > 1 \
+        else np.nanmedian(time_variant_sc)
 
 def spectral_flatness(signals, window_size, hop_size):
     time_variant_sf = librosa.feature.spectral_flatness(
         y=signals, n_fft=window_size, hop_length=hop_size,
         window='hann', center=True)
-    return np.median(time_variant_sf, axis=-1) if signals.ndim > 1 \
-        else np.median(time_variant_sf)
+    time_variant_sf[np.logical_or(time_variant_sf < 0.00001, time_variant_sf > 0.9999)] = np.nan
+    return np.nanmedian(time_variant_sf, axis=-1) if signals.ndim > 1 \
+        else np.nanmedian(time_variant_sf)
+
+def get_all_descriptors(signal, sample_rate, window_size, hop_size):
+    S = np.abs(librosa.magphase(librosa.stft(
+        y=signal, n_fft=window_size, hop_length=hop_size,
+        window='hann', center=True)))
+    time_variant_sc = librosa.feature.spectral_centroid(S=S)
+    time_variant_sf = librosa.feature.spectral_flatness(S=S)
+    time_variant_sc[time_variant_sc < 5] = np.nan
+    time_variant_sf[np.logical_or(time_variant_sf < 0.00001, time_variant_sf > 0.9999)] = np.nan
+    s_centroid = np.nanmedian(time_variant_sc)
+    s_flatness = np.nanmedian(time_variant_sf)
+    t_centroid = temporal_centroid(signal, sample_rate, window_size, hop_size)
+    return np.array([s_centroid, s_flatness, t_centroid])
+    
 
 def temporal_centroid_batch(signals, sample_rate):
     n_channels, n_samples = signals.shape
