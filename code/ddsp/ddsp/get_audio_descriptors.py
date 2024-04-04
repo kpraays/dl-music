@@ -1,23 +1,47 @@
 import numpy as np
 import librosa
+from scipy.signal import butter, sosfilt, hilbert
 
-def amplitude_envelope(signal, window_size, hop_size): 
+def amplitude_envelope(signal, window_size, hop_size):
     return np.array(
         [max(signal[i:i+window_size]) for i in range(0, len(signal), hop_size)])
 
 def temporal_centroid(signal, sample_rate, window_size, hop_size):
-    envelope = amplitude_envelope(signal, window_size, hop_size)
-    window_per_second = sample_rate / hop_size
-    return np.sum(np.arange(1, len(envelope)+1) * envelope) / np.sum(envelope) / window_per_second
+    # envelope = amplitude_envelope(signal, window_size, hop_size)
+    # window_per_second = sample_rate / hop_size
+    # return np.sum(np.arange(1, len(envelope)+1) * envelope) / np.sum(envelope) / window_per_second
+    n_samples = signal.shape[0]
+    sos = butter(2, 10, "lowpass", fs=sample_rate, output="sos")
+    filtered_signal = sosfilt(sos, np.abs(signal))
+    temporal_centroid = np.sum(np.arange(1, n_samples+1) * filtered_signal) \
+        / np.sum(filtered_signal) / sample_rate
+    return temporal_centroid
 
-def spectral_centroid(signal, sample_rate, window_size, hop_size):
+def spectral_centroid(signals, sample_rate, window_size, hop_size):
     time_variant_sc = librosa.feature.spectral_centroid(
-        y=signal, sr=sample_rate, n_fft=window_size, hop_length=hop_size,
+        y=signals, sr=sample_rate, n_fft=window_size, hop_length=hop_size,
         window='hann', center=True)
-    return np.median(time_variant_sc)
+    return np.median(time_variant_sc, axis=-1) if signals.ndim > 1 \
+        else np.median(time_variant_sc)
 
-def spectral_flatness(signal, window_size, hop_size):
+def spectral_flatness(signals, window_size, hop_size):
     time_variant_sf = librosa.feature.spectral_flatness(
-        y=signal, n_fft=window_size, hop_length=hop_size,
+        y=signals, n_fft=window_size, hop_length=hop_size,
         window='hann', center=True)
-    return np.median(time_variant_sf)
+    return np.median(time_variant_sf, axis=-1) if signals.ndim > 1 \
+        else np.median(time_variant_sf)
+
+def temporal_centroid_batch(signals, sample_rate):
+    n_channels, n_samples = signals.shape
+
+    # hilbert method from Timbre Toolbox (Peeters et al. 2011)
+    # sos = butter(3, 5, "lowpass", fs=sample_rate, output="sos")
+    # filtered_signals = sosfilt(sos, np.abs(hilbert(signals)))
+
+    # filtering method from Tarjano and Pereira (2022)
+    # https://www.sciencedirect.com/science/article/pii/S1051200421002682
+    sos = butter(2, 10, "lowpass", fs=sample_rate, output="sos")
+    filtered_signals = sosfilt(sos, np.abs(signals))
+    temporal_centroid = np.sum(np.arange(1, n_samples+1) * filtered_signals, axis=-1) \
+        / np.sum(filtered_signals, axis=-1) / sample_rate
+    return np.expand_dims(temporal_centroid, -1)

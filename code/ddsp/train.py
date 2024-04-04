@@ -6,6 +6,7 @@ from effortless_config import Config
 from os import path
 from preprocess import Dataset
 from tqdm import tqdm
+from ddsp.get_audio_descriptors import spectral_centroid, spectral_flatness, temporal_centroid, temporal_centroid_batch
 from ddsp.core import multiscale_fft, safe_log, mean_std_loudness
 import soundfile as sf
 from einops import rearrange
@@ -68,6 +69,8 @@ n_element = 0
 step = 0
 epochs = int(np.ceil(args.STEPS / len(dataloader)))
 
+timbre_loss_factor = 1
+
 for e in tqdm(range(epochs)):
     for signal, pitch, loudness, mfcc, timbre, source in dataloader:
         signal = signal.to(device)
@@ -80,6 +83,36 @@ for e in tqdm(range(epochs)):
         loudness = (loudness - mean_loudness) / std_loudness
 
         y = model(pitch, loudness, mfcc, timbre, source).squeeze(-1)
+        
+        rec_signals = y.detach().cpu().numpy()
+        
+        # parallel version, way slower than non-parallel version
+        # rec_spec_centroid = spectral_centroid(rec_signals, config["preprocess"]["sampling_rate"], 256, 128)
+        # rec_spec_flatness = spectral_flatness(rec_signals, 256, 128)
+        # rec_t_centroid = temporal_centroid_batch(rec_signals, config["preprocess"]["sampling_rate"])
+        # rec_timbre = np.concatenate((rec_spec_centroid, rec_spec_flatness, rec_t_centroid), axis=-1)
+        # rec_timbre = torch.from_numpy(rec_timbre).to(device)
+
+        timbre = timbre.detach().cpu().numpy()
+        rec_timbre = np.zeros_like(timbre)
+        for i in range(rec_signals.shape[0]):
+            rec_sig = rec_signals[i]
+            rec_spec_centroid = spectral_centroid(rec_sig, config["preprocess"]["sampling_rate"], 256, 128)
+            rec_spec_flatness = spectral_flatness(rec_sig, 256, 128)
+            rec_tempo_centroid = temporal_centroid(rec_sig, config["preprocess"]["sampling_rate"], 128, 64)
+            rec_timbre[i] = np.array([rec_spec_centroid, rec_spec_flatness, rec_tempo_centroid])
+        # rec_timbre = torch.from_numpy(rec_timbre).to(device)
+
+        ori_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*timbre[:, 0]/1000 + 1 + 1e-7)
+        rec_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*rec_timbre[:, 0]/1000 + 1 + 1e-7)
+        ori_erb_spec_centroid_min, ori_erb_spec_centroid_max = ori_erb_spec_centroid.min(), ori_erb_spec_centroid.max()
+        ori_erb_norm_spec_centroid = (ori_erb_spec_centroid - ori_erb_spec_centroid_min) / (ori_erb_spec_centroid_max - ori_erb_spec_centroid_min)
+        rec_erb_norm_spec_centroid = (rec_erb_spec_centroid - ori_erb_spec_centroid_min) / (ori_erb_spec_centroid_max - ori_erb_spec_centroid_min)
+        ori_flatness_min, ori_flatness_max = timbre[:, 1].min(), timbre[:, 1].max()
+        ori_norm_flatness = (timbre[:, 1] - ori_flatness_min) / (ori_flatness_max - ori_flatness_min)
+        rec_norm_flatness = (rec_timbre[:, 1] - ori_flatness_min) / (ori_flatness_max - ori_flatness_min)
+        ori_norm_temporal_centroid = timbre[:, 2] / (config["preprocess"]["signal_length"] / config["preprocess"]["sampling_rate"])
+        rec_norm_temporal_centroid = rec_timbre[:, 2] / (config["preprocess"]["signal_length"] / config["preprocess"]["sampling_rate"])
 
         ori_stft = multiscale_fft(
             signal,
@@ -97,6 +130,11 @@ for e in tqdm(range(epochs)):
             lin_loss = (s_x - s_y).abs().mean()
             log_loss = (safe_log(s_x) - safe_log(s_y)).abs().mean()
             loss = loss + lin_loss + log_loss
+
+        timbre_loss = np.abs(rec_erb_norm_spec_centroid - ori_erb_norm_spec_centroid).mean() \
+            + np.abs(rec_norm_flatness - ori_norm_flatness).mean() \
+            + np.abs(rec_norm_temporal_centroid - ori_norm_temporal_centroid).mean()
+        loss = loss + timbre_loss_factor * timbre_loss
 
         opt.zero_grad()
         loss.backward()
