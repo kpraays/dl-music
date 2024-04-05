@@ -78,6 +78,8 @@ for e in tqdm(range(epochs)):
         loudness = loudness.unsqueeze(-1).to(device)
         mfcc = mfcc.to(device)
         timbre = timbre.to(device)
+        ori_timbre = timbre.detach().cpu().numpy()
+        timbre = timbre.unsqueeze(1).repeat(1, pitch.size(1), 1)
         source = source.to(device)
 
         loudness = (loudness - mean_loudness) / std_loudness
@@ -93,8 +95,7 @@ for e in tqdm(range(epochs)):
         # rec_timbre = np.concatenate((rec_spec_centroid, rec_spec_flatness, rec_t_centroid), axis=-1)
         # rec_timbre = torch.from_numpy(rec_timbre).to(device)
 
-        timbre = timbre.detach().cpu().numpy()
-        rec_timbre = np.zeros_like(timbre)
+        rec_timbre = np.zeros_like(ori_timbre)
         for i in range(rec_signals.shape[0]):
             # rec_sig = rec_signals[i]
             # rec_spec_centroid = spectral_centroid(rec_sig, config["preprocess"]["sampling_rate"], 256, 128)
@@ -104,11 +105,11 @@ for e in tqdm(range(epochs)):
             rec_timbre[i] = get_all_descriptors(rec_signals[i], config["preprocess"]["sampling_rate"], 256, 128)
         # rec_timbre = torch.from_numpy(rec_timbre).to(device)
 
-        ori_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*timbre[:, 0]/1000 + 1 + 1e-7)
+        ori_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*ori_timbre[:, 0]/1000 + 1 + 1e-7)
         rec_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*rec_timbre[:, 0]/1000 + 1 + 1e-7)
-        ori_spec_flatness = timbre[:, 1]
+        ori_spec_flatness = ori_timbre[:, 1]
         rec_spec_flatness = rec_timbre[:, 1]
-        ori_temporal_centroid = timbre[:, 2]
+        ori_temporal_centroid = ori_timbre[:, 2]
         rec_temporal_centroid = rec_timbre[:, 2]
         timbre_loss = np.abs(rec_erb_spec_centroid - ori_erb_spec_centroid).mean() \
             + np.abs(rec_spec_flatness - ori_spec_flatness).mean() \

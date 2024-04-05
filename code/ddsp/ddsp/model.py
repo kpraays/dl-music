@@ -61,7 +61,7 @@ class DDSP(nn.Module):
         self.encoder = Encoder(512)
         self.in_mlps = nn.ModuleList([mlp(1, hidden_size, 3)] * 2 + [mlp(16, hidden_size, 3)])
         self.gru = gru(3, hidden_size)
-        self.out_mlp = mlp(hidden_size + 2, hidden_size, 3)
+        self.out_mlp = mlp(hidden_size + 5, hidden_size, 3)
 
         self.proj_matrices = nn.ModuleList([
             nn.Linear(hidden_size, n_harmonic + 1),
@@ -80,7 +80,7 @@ class DDSP(nn.Module):
             self.in_mlps[1](loudness),
             self.in_mlps[2](latent_z),
         ], -1)
-        hidden = torch.cat([self.gru(hidden)[0], pitch, loudness], -1)
+        hidden = torch.cat([self.gru(hidden)[0], pitch, loudness, timbre], -1)
         hidden = self.out_mlp(hidden)
 
         # harmonic part
