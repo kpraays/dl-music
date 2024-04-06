@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from ddsp.audio_metrics import signal_to_noise_ratio, pitch_distance, loudness_distance, timbre_distance
+from librosa import hz_to_midi
 from ddsp.model import DDSP
 from ddsp.core import extract_loudness, extract_pitch
 import yaml
@@ -94,14 +95,14 @@ get_l1_dist = lambda ori_val, rec_val: np.abs(rec_val - ori_val)
 mean_snr = np.array(snr_list).mean()
 mean_pitch_dist = np.array(pitch_dist_list).mean()
 mean_loudness_dist = np.array(loudness_dist_list).mean()
-mean_s_centroid_dist = get_l1_dist(np.array(ori_s_centroid), np.array(rec_s_centroid)).mean()
+mean_s_centroid_dist = get_l1_dist(hz_to_midi(np.array(ori_s_centroid)), hz_to_midi(np.array(rec_s_centroid))).mean()
 mean_s_flatness_dist = get_l1_dist(np.array(ori_s_flatness), np.array(rec_s_flatness)).mean()
 mean_t_centroid_dist = get_l1_dist(np.array(ori_t_centroid), np.array(rec_t_centroid)).mean()
 
 print(f"SNR = {mean_snr:.4f}",
-      f"L1 Pitch Distance = {mean_pitch_dist:.4f}",
+      f"L1 Pitch Distance = {mean_pitch_dist:.4f} (note)",
       f"L1 Loudness Distance = {mean_loudness_dist:.4f}",
-      f"L1 Spectral Centroid Distance = {mean_s_centroid_dist:.4f}",
+      f"L1 Spectral Centroid Distance = {mean_s_centroid_dist:.4f} (note)",
       f"L1 Spectral Flatness Distance = {mean_s_flatness_dist:.4f}",
-      f"L1 Temporal Centroid Distance = {mean_t_centroid_dist:.4f}",
+      f"L1 Temporal Centroid Distance = {mean_t_centroid_dist:.4f} (sec)",
       sep="\n")
