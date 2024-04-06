@@ -36,7 +36,12 @@ dataloader = torch.utils.data.DataLoader(
 snr_list = []
 pitch_dist_list = []
 loudness_dist_list = []
-timbre_dist_list = []
+ori_s_centroid = []
+ori_s_flatness = []
+ori_t_centroid = []
+rec_s_centroid = []
+rec_s_flatness = []
+rec_t_centroid = []
 
 t = tqdm(total=len(dataloader))
 for signal, pitch, loudness, mfcc, timbre, source in dataloader:
@@ -52,7 +57,6 @@ for signal, pitch, loudness, mfcc, timbre, source in dataloader:
     loudness = loudness.unsqueeze(-1).to(device)
     mfcc = mfcc.to(device)
     timbre = timbre.to(device)
-    ori_timbre = timbre.detach().cpu().numpy()
     timbre = timbre.unsqueeze(1).repeat(1, pitch.size(1), 1)
     source = source.to(device)
 
@@ -74,17 +78,30 @@ for signal, pitch, loudness, mfcc, timbre, source in dataloader:
         snr_list.append(snr)
         pitch_dist_list.append(pitch_dist)
         loudness_dist_list.append(loudness_dist)
-        timbre_dist_list.append(timbre_dist)
+        ori_s_centroid.append(ori_timbre[0])
+        ori_s_flatness.append(ori_timbre[1])
+        ori_t_centroid.append(ori_timbre[2])
+        rec_s_centroid.append(rec_timbre[0])
+        rec_s_flatness.append(rec_timbre[1])
+        rec_t_centroid.append(rec_timbre[2])
+
         t.update()
 
 t.close()
 
+get_l1_dist = lambda ori_val, rec_val: np.abs(rec_val - ori_val)
+
 mean_snr = np.array(snr_list).mean()
 mean_pitch_dist = np.array(pitch_dist_list).mean()
 mean_loudness_dist = np.array(loudness_dist_list).mean()
-mean_timbre_dist = np.array(timbre_dist_list).mean()
+mean_s_centroid_dist = get_l1_dist(np.array(ori_s_centroid), np.array(rec_s_centroid)).mean()
+mean_s_flatness_dist = get_l1_dist(np.array(ori_s_flatness), np.array(rec_s_flatness)).mean()
+mean_t_centroid_dist = get_l1_dist(np.array(ori_t_centroid), np.array(rec_t_centroid)).mean()
+
 print(f"SNR = {mean_snr:.4f}",
       f"L1 Pitch Distance = {mean_pitch_dist:.4f}",
       f"L1 Loudness Distance = {mean_loudness_dist:.4f}",
-      f"L1 Timbre Distance = {mean_timbre_dist:.4f}",
+      f"L1 Spectral Centroid Distance = {mean_s_centroid_dist:.4f}",
+      f"L1 Spectral Flatness Distance = {mean_s_flatness_dist:.4f}",
+      f"L1 Temporal Centroid Distance = {mean_t_centroid_dist:.4f}",
       sep="\n")
