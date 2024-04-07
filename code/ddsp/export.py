@@ -81,4 +81,4 @@ if args.DATA:
     makedirs(path.join(args.OUT_DIR, "data"), exist_ok=True)
     file_list = get_files(**config["data"])
     file_list = [str(f).replace(" ", "\\ ") for f in file_list]
-    system(f"cp {" ".join(file_list)} {path.normpath(args.OUT_DIR)}/data/")
+    system(f"cp {' '.join(file_list)} {path.normpath(args.OUT_DIR)}/data/")

@@ -10,6 +10,9 @@ import numpy as np
 from os import makedirs, path
 import torch
 from scipy.io import wavfile
+import warnings
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def get_files(data_location, extension, **kwargs):
