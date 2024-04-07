@@ -94,7 +94,8 @@ for e in tqdm(range(epochs)):
 
         loudness = (loudness - mean_loudness) / std_loudness
 
-        y = model(pitch, loudness, mfcc, timbre, source).squeeze(-1)
+        y, mu, logvar = model(pitch, loudness, mfcc, timbre, source)
+        y = y.squeeze(-1)
         
         rec_signals = y.detach().cpu().numpy()
         
@@ -136,7 +137,9 @@ for e in tqdm(range(epochs)):
             log_loss = (safe_log(s_x) - safe_log(s_y)).abs().mean()
             loss = loss + lin_loss + log_loss
 
-        loss = loss + timbre_loss_factor * timbre_loss
+        kl_divergence = 1/2 * torch.sum(torch.pow(mu, 2) + torch.pow(torch.exp(logvar), 2) - 2 * logvar - 1)
+
+        loss = loss + timbre_loss_factor * timbre_loss + kl_divergence
 
         opt.zero_grad()
         loss.backward()
@@ -163,7 +166,8 @@ for e in tqdm(range(epochs)):
         source = source.to(device)
 
         with torch.no_grad():
-            y = model(pitch, loudness, mfcc, timbre, source).squeeze(-1)
+            y, mu, logvar = model(pitch, loudness, mfcc, timbre, source)
+            y = y.squeeze(-1)
 
         rec_signals = y.detach().cpu().numpy()
         rec_timbre = np.zeros_like(ori_timbre)
@@ -198,8 +202,10 @@ for e in tqdm(range(epochs)):
             log_loss = (safe_log(s_x) - safe_log(s_y)).abs().mean()
             loss = loss + lin_loss + log_loss
 
-        valid_loss += loss + timbre_loss_factor * timbre_loss
-        valid_loss += loss
+        kl_divergence = 1/2 * torch.sum(torch.pow(mu, 2) + torch.pow(torch.exp(logvar), 2) - 2 * logvar - 1)
+
+        valid_loss += loss + timbre_loss_factor * timbre_loss + kl_divergence
+
     writer.add_scalar("loss/valid", valid_loss.item() / len(dataloader_valid), step)
 
     writer.add_scalar("lr", schedule(e), e)

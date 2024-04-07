@@ -51,6 +51,31 @@ class Encoder(nn.Module):
         return out
 
 
+class VAEncoder(nn.Module):
+    def __init__(self, hidden_size=512, latent_dim=16, dropout_rate=0.1):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(30)
+        self.gru = nn.GRU(30, hidden_size, batch_first=True)
+        # Adding dropout layer
+        self.dropout = nn.Dropout(dropout_rate)
+        self.fc_mu = nn.Sequential(
+            nn.Linear(hidden_size, latent_dim),
+            nn.Dropout(dropout_rate)  # dropout 
+        )
+        self.fc_logvar = nn.Sequential(
+            nn.Linear(hidden_size, latent_dim),
+            nn.Dropout(dropout_rate)  # dropout 
+        )
+
+    def forward(self, x):
+        out = self.layer_norm(x)
+        out, _ = self.gru(out)
+        # Separate outputs for mean and log variance
+        mu = self.fc_mu(out)
+        logvar = self.fc_logvar(out)
+        return mu, logvar
+
+
 class DDSP(nn.Module):
     def __init__(self, hidden_size, n_harmonic, n_bands, sampling_rate,
                  block_size):
@@ -58,7 +83,7 @@ class DDSP(nn.Module):
         self.register_buffer("sampling_rate", torch.tensor(sampling_rate))
         self.register_buffer("block_size", torch.tensor(block_size))
 
-        self.encoder = Encoder(512)
+        self.encoder = VAEncoder(512, 16, dropout_rate=0)
         self.in_mlps = nn.ModuleList([mlp(3, hidden_size, 3)] + [mlp(2, hidden_size, 3)] + [mlp(16, hidden_size, 3)])
         # self.in_mlps = nn.ModuleList([mlp(1, hidden_size, 3)] * 2 + [mlp(16, hidden_size, 3)])
         self.gru = gru(3, hidden_size)
@@ -75,8 +100,19 @@ class DDSP(nn.Module):
         self.register_buffer("cache_gru", torch.zeros(1, 1, hidden_size))
         self.register_buffer("phase", torch.zeros(1))
 
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
     def forward(self, pitch, loudness, mfcc, timbre, source):
-        latent_z = self.encoder(mfcc)
+        # Standard encoder:
+        # latent_z = self.encoder(mfcc)
+
+        # VAE:
+        mu, logvar = self.encoder(mfcc)  # Use VAEEncoder here
+        latent_z = self.reparameterize(mu, logvar)  # Sample latent vector
+
         hidden_pitch = self.in_mlps[0](torch.cat([pitch, timbre[:, :, 0:2]], -1))
         hidden_loudness = self.in_mlps[1](torch.cat([loudness, timbre[:, :, 2].unsqueeze(-1)], -1))
         hidden_z = self.in_mlps[2](latent_z)
@@ -127,7 +163,7 @@ class DDSP(nn.Module):
         #reverb part
         signal = self.reverb(signal)
 
-        return signal
+        return signal, mu, logvar
 
     def realtime_forward(self, pitch, loudness):
         hidden = torch.cat([
