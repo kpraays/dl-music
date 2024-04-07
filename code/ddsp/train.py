@@ -34,16 +34,24 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 model = DDSP(**config["model"]).to(device)
 
-dataset = Dataset(config["preprocess"]["out_dir"])
+dataset_train = Dataset(config["preprocess"]["out_dir"])
+dataset_validation = Dataset(config["validation"]["data_dir"])
 
-dataloader = torch.utils.data.DataLoader(
-    dataset,
+dataloader_train = torch.utils.data.DataLoader(
+    dataset_train,
     args.BATCH,
     True,
     drop_last=True,
 )
 
-mean_loudness, std_loudness = mean_std_loudness(dataloader)
+dataloader_valid = torch.utils.data.DataLoader(
+    dataset_validation,
+    1,
+    False,
+    drop_last=False,
+)
+
+mean_loudness, std_loudness = mean_std_loudness(dataloader_train)
 config["data"]["mean_loudness"] = mean_loudness
 config["data"]["std_loudness"] = std_loudness
 
@@ -55,24 +63,26 @@ with open(path.join(args.ROOT, args.NAME, "config.yaml"), "w") as out_config:
 opt = torch.optim.Adam(model.parameters(), lr=args.START_LR)
 
 schedule = get_scheduler(
-    len(dataloader),
+    len(dataloader_train),
     args.START_LR,
     args.STOP_LR,
     args.DECAY_OVER,
 )
 
-# scheduler = torch.optim.lr_scheduler.LambdaLR(opt, schedule)
+scheduler = torch.optim.lr_scheduler.LambdaLR(opt, schedule)
 
 best_loss = float("inf")
-mean_loss = 0
-n_element = 0
+train_loss = 0
+n_batch = 0
 step = 0
-epochs = int(np.ceil(args.STEPS / len(dataloader)))
+epochs = int(np.ceil(args.STEPS / len(dataloader_train)))
 
 timbre_loss_factor = 1
 
 for e in tqdm(range(epochs)):
-    for signal, pitch, loudness, mfcc, timbre, source in dataloader:
+    # training phase
+    model.train()
+    for signal, pitch, loudness, mfcc, timbre, source in dataloader_train:
         signal = signal.to(device)
         pitch = pitch.unsqueeze(-1).to(device)
         loudness = loudness.unsqueeze(-1).to(device)
@@ -97,14 +107,8 @@ for e in tqdm(range(epochs)):
 
         rec_timbre = np.zeros_like(ori_timbre)
         for i in range(rec_signals.shape[0]):
-            # rec_sig = rec_signals[i]
-            # rec_spec_centroid = spectral_centroid(rec_sig, config["preprocess"]["sampling_rate"], 256, 128)
-            # rec_spec_flatness = spectral_flatness(rec_sig, 256, 128)
-            # rec_tempo_centroid = temporal_centroid(rec_sig, config["preprocess"]["sampling_rate"], 128, 64)
-            # rec_timbre[i] = np.array([rec_spec_centroid, rec_spec_flatness, rec_tempo_centroid])
             rec_timbre[i] = get_all_descriptors(rec_signals[i], config["preprocess"]["sampling_rate"], 256, 128)
-        # rec_timbre = torch.from_numpy(rec_timbre).to(device)
-
+        
         ori_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*ori_timbre[:, 0]/1000 + 1 + 1e-7)
         rec_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*rec_timbre[:, 0]/1000 + 1 + 1e-7)
         ori_spec_flatness = ori_timbre[:, 1]
@@ -138,32 +142,76 @@ for e in tqdm(range(epochs)):
         loss.backward()
         opt.step()
 
-        writer.add_scalar("loss", loss.item(), step)
+        writer.add_scalar("loss/train", loss.item() / args.BATCH, step)
 
         step += 1
 
-        n_element += 1
-        mean_loss += (loss.item() - mean_loss) / n_element
+        n_batch += 1
+        train_loss += loss.item()
 
-    if not e % 10:
-        writer.add_scalar("lr", schedule(e), e)
-        writer.add_scalar("reverb_decay", model.reverb.decay.item(), e)
-        writer.add_scalar("reverb_wet", model.reverb.wet.item(), e)
-        # scheduler.step()
-        if mean_loss < best_loss:
-            best_loss = mean_loss
-            torch.save(
-                model.state_dict(),
-                path.join(args.ROOT, args.NAME, "state.pth"),
-            )
+    # validation phase
+    model.eval()
+    valid_loss = 0
+    for signal, pitch, loudness, mfcc, timbre, source in dataloader_valid:
+        signal = signal.to(device)
+        pitch = pitch.unsqueeze(-1).to(device)
+        loudness = loudness.unsqueeze(-1).to(device)
+        mfcc = mfcc.to(device)
+        timbre = timbre.to(device)
+        ori_timbre = timbre.detach().cpu().numpy()
+        timbre = timbre.unsqueeze(1).repeat(1, pitch.size(1), 1)
+        source = source.to(device)
 
-        mean_loss = 0
-        n_element = 0
+        with torch.no_grad():
+            y = model(pitch, loudness, mfcc, timbre, source).squeeze(-1)
 
-        audio = torch.cat([signal, y], -1).reshape(-1).detach().cpu().numpy()
+        rec_signals = y.detach().cpu().numpy()
+        rec_timbre = np.zeros_like(ori_timbre)
 
-        sf.write(
-            path.join(args.ROOT, args.NAME, f"eval_{e:06d}.wav"),
-            audio,
-            config["preprocess"]["sampling_rate"],
+        for i in range(rec_signals.shape[0]):
+            rec_timbre[i] = get_all_descriptors(rec_signals[i], config["preprocess"]["sampling_rate"], 256, 128)
+
+        ori_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*ori_timbre[:, 0]/1000 + 1 + 1e-7)
+        rec_erb_spec_centroid = 1000/(24.7*4.37) * np.log(4.37*rec_timbre[:, 0]/1000 + 1 + 1e-7)
+        ori_spec_flatness = ori_timbre[:, 1]
+        rec_spec_flatness = rec_timbre[:, 1]
+        ori_temporal_centroid = ori_timbre[:, 2]
+        rec_temporal_centroid = rec_timbre[:, 2]
+        timbre_loss = np.abs(rec_erb_spec_centroid - ori_erb_spec_centroid).mean() \
+            + np.abs(rec_spec_flatness - ori_spec_flatness).mean() \
+            + np.abs(rec_temporal_centroid - ori_temporal_centroid).mean()
+
+        ori_stft = multiscale_fft(
+            signal,
+            config["train"]["scales"],
+            config["train"]["overlap"],
         )
+        rec_stft = multiscale_fft(
+            y,
+            config["train"]["scales"],
+            config["train"]["overlap"],
+        )
+
+        loss = 0
+        for s_x, s_y in zip(ori_stft, rec_stft):
+            lin_loss = (s_x - s_y).abs().mean()
+            log_loss = (safe_log(s_x) - safe_log(s_y)).abs().mean()
+            loss = loss + lin_loss + log_loss
+
+        valid_loss += loss + timbre_loss_factor * timbre_loss
+        valid_loss += loss
+    writer.add_scalar("loss/valid", valid_loss.item() / len(dataloader_valid), step)
+
+    writer.add_scalar("lr", schedule(e), e)
+    writer.add_scalar("reverb_decay", model.reverb.decay.item(), e)
+    writer.add_scalar("reverb_wet", model.reverb.wet.item(), e)
+    scheduler.step()
+    if train_loss / args.BATCH / n_batch < best_loss:
+        best_loss = train_loss / args.BATCH / n_batch
+        torch.save(
+            model.state_dict(),
+            path.join(args.ROOT, args.NAME, "state.pth"),
+        )
+
+    train_loss = 0
+    n_batch = 0

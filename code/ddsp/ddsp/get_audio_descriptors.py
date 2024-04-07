@@ -40,7 +40,7 @@ def get_all_descriptors(signal, sample_rate, window_size, hop_size):
     time_variant_sc = librosa.feature.spectral_centroid(S=S)
     time_variant_sf = librosa.feature.spectral_flatness(S=S)
     time_variant_sc[time_variant_sc < 5] = np.nan
-    time_variant_sf[np.logical_or(time_variant_sf < 0.00001, time_variant_sf > 0.9999)] = np.nan
+    time_variant_sf[np.logical_or(time_variant_sf < 0.00001, time_variant_sf > 0.99995)] = np.nan
     s_centroid = np.nanmedian(time_variant_sc)
     s_flatness = np.nanmedian(time_variant_sf)
     t_centroid = temporal_centroid(signal, sample_rate, window_size, hop_size)
